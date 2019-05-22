@@ -31,6 +31,7 @@ TGA_SIZE_PAL_MAPS = {
     2250: (15, 150, "MENU.PAL",), # palette is kinda wrong here
     4096: (64, 64, "MENU.PAL",),
     5440: (272, 20, "MENU.PAL",),
+    64000: (320, 200, None,),
     98640: (360, 274, "MENU.PAL",),
     640*480: (640, 480, None,),
 } # type: Dict[int, Tuple[int, int, Optional[str]]]
@@ -147,14 +148,25 @@ def process_file(infp, in_fname): # type: (LzwReader, str) -> None
     with open(out_fname, "wb") as outfp:
         outfp.write(outdata)
 
-    if len(outdata) in TGA_SIZE_PAL_MAPS:
+    w, h, = (0, 0,) # type: Tuple[int, int]
+    has_dims = False
+    paldata = b"" # type: bytes
+    if outdata[:4] == b"RIX3":
+        w, h, unk1 = struct.unpack("<HHH", outdata[0x4:][:0x6])
+        print(f"RIX3 file detected, {w} x {h} (unk {unk1} / {unk1:04X})")
+        paldata = outdata[0xA:][:256*3]
+        assert len(paldata) == 256*3
+        outdata = outdata[0x30A:]
+        has_dims = True
+
+    elif len(outdata) in TGA_SIZE_PAL_MAPS:
         w, h, pal_fname = TGA_SIZE_PAL_MAPS[len(outdata)]
+        has_dims = True
         if pal_fname is None:
             in_pal_fname = in_fname.rpartition(".")[0] + ".PAL"
         else:
             in_pal_fname = pal_fname
 
-        paldata = b"" # type: bytes
         try:
             with open(in_pal_fname, "rb") as inpalfp:
                 paldata = inpalfp.read()
@@ -163,19 +175,22 @@ def process_file(infp, in_fname): # type: (LzwReader, str) -> None
         else:
             print(f"Got palette {in_pal_fname}")
             assert len(paldata) == 256*3
-            tga_out_fname = os.path.join(*[OUT_ROOT_DIR, in_fname+".tga"])
-            print(f"Writing {tga_out_fname!r}")
-            with open(tga_out_fname, "wb") as outfp:
-                outfp.write(struct.pack("<BBB", 0, 1, 1))
-                outfp.write(struct.pack("<HHB", 0, 256, 24))
-                outfp.write(struct.pack("<HHHH", 0, 0, w, h))
-                outfp.write(struct.pack("<BB", 8, 0b00100000))
-                for i in range(256):
-                    outfp.write(bytes([(paldata[i*3+2]*0x41)>>4]))
-                    outfp.write(bytes([(paldata[i*3+1]*0x41)>>4]))
-                    outfp.write(bytes([(paldata[i*3+0]*0x41)>>4]))
-                outfp.write(outdata)
-        
+
+    if has_dims and paldata != b"":
+        tga_out_fname = os.path.join(*[OUT_ROOT_DIR, in_fname+".tga"])
+        print(f"Writing {tga_out_fname!r}")
+        assert w*h == len(outdata)
+        with open(tga_out_fname, "wb") as outfp:
+            outfp.write(struct.pack("<BBB", 0, 1, 1))
+            outfp.write(struct.pack("<HHB", 0, 256, 24))
+            outfp.write(struct.pack("<HHHH", 0, 0, w, h))
+            outfp.write(struct.pack("<BB", 8, 0b00100000))
+            for i in range(256):
+                outfp.write(bytes([(paldata[i*3+2]*0x41)>>4]))
+                outfp.write(bytes([(paldata[i*3+1]*0x41)>>4]))
+                outfp.write(bytes([(paldata[i*3+0]*0x41)>>4]))
+            outfp.write(outdata)
+
 
 if __name__ == "__main__":
     main()
