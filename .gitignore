@@ -1,0 +1,12 @@
+# Output
+
+# Python
+__pycache__
+.mypy_cache
+
+# Workspace
+workspace
+
+# VIM
+.sw?
+.*.sw?
